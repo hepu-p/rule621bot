@@ -2,8 +2,10 @@
 import logging
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
+from aiogram.types import TelegramObject, Update, Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+
+logger = logging.getLogger(__name__)
 
 class LoggingMiddleware(BaseMiddleware):
     async def __call__(
@@ -12,25 +14,25 @@ class LoggingMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
-        # Получаем FSMContext, если он есть
-        state: FSMContext = data.get('state')
-        
-        # Получаем информацию о пользователе
         user = data.get('event_from_user')
         user_id = user.id if user else "N/A"
 
-        # Логируем тип события и текущее состояние FSM
+        log_message = f"Update from user {user_id}"
+
+        if isinstance(event, Message):
+            log_message += f" | Message: '{event.text}'"
+        elif isinstance(event, CallbackQuery):
+            log_message += f" | CallbackQuery: '{event.data}'"
+
+        state: FSMContext = data.get('state')
         if state:
             current_state = await state.get_state()
-            logging.info(
-                f"MIDDLEWARE: New event of type '{type(event).__name__}' from user {user_id}. "
-                f"Current FSM state: {current_state}"
-            )
-        else:
-            logging.info(
-                f"MIDDLEWARE: New event of type '{type(event).__name__}' from user {user_id}. "
-                f"No FSM state in context."
-            )
-        
-        # Передаем управление дальше по цепочке
-        return await handler(event, data)
+            log_message += f" | FSM State: {current_state}"
+
+        logger.info(log_message)
+
+        try:
+            return await handler(event, data)
+        except Exception as e:
+            logger.exception(f"Error during handling update from user {user_id}: {e}")
+            raise
